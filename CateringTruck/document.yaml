@@ -1,0 +1,330 @@
+openapi: 3.0.0
+info:
+  title: "Catering Truck API"
+  version: "1.0.0"
+  description: >
+    Модуль «Catering Truck» предназначен для управления машинами, которые доставляют еду к самолёту.  
+    Каждая машина имеет свою вместимость, местоположение и статус, а также умеет загружать/доставлять еду.  
+    
+    
+    **Основные взаимодействия**:
+    
+    - **Handling Supervisor**: Отправляет задачу на доставку еды. По завершении доставки Catering Truck уведомляет HS.
+    
+    - **Ground Control**: Предоставляет разрешение на движение и обрабатывает фактические перемещения.
+    
+    - **Board** (или Plane)**: При необходимости уточняются детали доставки к конкретному самолёту.
+    
+    
+    Документация: [API Catering Truck ](https://docs.google.com/document/d/1TpcMef_P544ynuTU7WOHi2YtxdY7OB8JmE5zg3gtc5w/edit?tab=t.0)
+    
+servers:
+  - url: http://localhost:8009
+
+paths:
+  /v1/catering-trucks:
+    get:
+      summary: Получить список всех Catering Trucks
+      description: Возвращает массив машин (Catering Truck) со всеми полями.
+      responses:
+        '200':
+          description: Список машин
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CateringTruck'
+  /v1/catering-trucks/{id}:
+    get:
+      summary: Получить информацию о конкретной Catering Truck
+      description: Возвращает объект машины по её уникальному идентификатору.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: "Идентификатор машины (например, CT-001)"
+      responses:
+        '200':
+          description: Машина найдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CateringTruck'
+        '404':
+          description: Машина с таким ID не найдена
+  /v1/catering-trucks/init:
+    post:
+      summary: Инициализация Catering Truck
+      description: Размещение машины в заданной точке карты.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InitCateringTruck'
+      responses:
+        '200':
+          description: Машина успешно инициализирована
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        '400':
+          description: Некорректные данные или точка занята
+        '404':
+          description: Точка не найдена
+  /v1/catering-trucks/{id}/move-permission:
+    get:
+      summary: Запросить разрешение на движение
+      description: |
+        Отправляет запрос в Ground Control для получения разрешения 
+        на движение из `from` в `to`.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: from
+          required: true
+          schema:
+            type: string
+          description: Начальная точка
+        - in: query
+          name: to
+          required: true
+          schema:
+            type: string
+          description: Конечная точка
+      responses:
+        '200':
+          description: Разрешение на движение
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  allowed:
+                    type: boolean
+                  message:
+                    type: string
+        '400':
+          description: Некорректные данные
+        '403':
+          description: Движение запрещено
+  /v1/catering-trucks/{id}/move:
+    post:
+      summary: Начать движение
+      description: |
+        Отправляет запрос в Ground Control о старте движения из `from` в `to`.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoveRequest'
+      responses:
+        '200':
+          description: Движение начато
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        '400':
+          description: Некорректные данные или разрешение отсутствует
+  /v1/catering-trucks/{id}/arrived:
+    post:
+      summary: Подтвердить прибытие
+      description: |
+        Отправляет запрос в Ground Control о прибытии в конечную точку.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoveRequest'
+      responses:
+        '200':
+          description: Прибытие подтверждено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        '400':
+          description: Некорректные данные
+  /v1/catering-trucks/{id}/load-food:
+    post:
+      summary: Загрузка еды
+      description: |
+        Добавляет указанные количества блюд в меню Catering Truck.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MenuLoadRequest'
+      responses:
+        '200':
+          description: Еда загружена
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        '400':
+          description: Некорректные данные (например, превышена вместимость)
+  /v1/catering-trucks/{id}/deliver-food:
+    post:
+      summary: Доставка еды к самолёту
+      description: |
+        Осуществляет доставку загруженной еды к самолёту, 
+        взаимодействуя с Board (при необходимости) и завершая задачу.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                planeId:
+                  type: string
+                  example: "PL-001"
+      responses:
+        '200':
+          description: Еда доставлена
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        '400':
+          description: Некорректные данные
+
+components:
+  schemas:
+    CateringTruck:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "CT-001"
+        capacity:
+          type: number
+          example: 100
+        status:
+          type: string
+          description: "free | busy"
+          example: "free"
+        currentLocation:
+          type: string
+          example: "G11"
+        menu:
+          type: object
+          properties:
+            chicken:
+              type: number
+              example: 50
+            pork:
+              type: number
+              example: 30
+            fish:
+              type: number
+              example: 20
+            vegetarian:
+              type: number
+              example: 10
+    InitCateringTruck:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "CT-001"
+        location:
+          type: string
+          example: "G11"
+      required:
+        - id
+        - location
+    MoveRequest:
+      type: object
+      properties:
+        from:
+          type: string
+          example: "G11"
+        to:
+          type: string
+          example: "E15"
+      required:
+        - from
+        - to
+    MenuLoadRequest:
+      type: object
+      properties:
+        menu:
+          type: object
+          properties:
+            chicken:
+              type: number
+              example: 50
+            pork:
+              type: number
+              example: 30
+            fish:
+              type: number
+              example: 20
+            vegetarian:
+              type: number
+              example: 10
+      required:
+        - menu
