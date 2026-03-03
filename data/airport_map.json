@@ -404,6 +404,34 @@
       "node2": "CP-52"
     },
     {
+      "name": "E-11",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-1",
+      "node2": "CR-2"
+    },
+    {
+      "name": "E-12",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-2",
+      "node2": "CR-3"
+    },
+    {
+      "name": "E-13",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-3",
+      "node2": "CR-4"
+    },
+    {
+      "name": "E-14",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-4",
+      "node2": "CR-5"
+    },
+    {
       "name": "E-30",
       "capacity": 2,
       "type": "carRoad",
