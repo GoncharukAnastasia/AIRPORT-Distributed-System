@@ -1,0 +1,321 @@
+#version: '3.9'
+
+x-airport-service: &airport-service
+  build:
+    context: .
+    dockerfile: Dockerfile
+  restart: unless-stopped
+  networks:
+    - airport-net
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    restart: unless-stopped
+    ports:
+      - '5672:5672'
+      - '15672:15672'
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - airport-net
+
+  postgres:
+    image: postgres:16
+    container_name: airport-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: airport
+      POSTGRES_USER: airport_user
+      POSTGRES_PASSWORD: airport_pass
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U airport_user -d airport']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - airport-net
+
+  information-panel:
+    <<: *airport-service
+    container_name: information-panel
+    command: ['/app/build/InformationPanel', '8082']
+    ports:
+      - '8082:8082'
+    environment:
+      FM_PG_HOST: postgres
+      FM_PG_PORT: '5432'
+      FM_PG_DB: airport
+      FM_PG_USER: airport_user
+      FM_PG_PASSWORD: airport_pass
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:8082/health']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  followme:
+    <<: *airport-service
+    container_name: followme
+    command: ['/app/build/FollowMe', '8083']
+    ports:
+      - '8083:8083'
+    environment:
+      GC_HOST: ground-control
+      GC_PORT: '8081'
+      FM_PG_HOST: postgres
+      FM_PG_PORT: '5432'
+      FM_PG_DB: airport
+      FM_PG_USER: airport_user
+      FM_PG_PASSWORD: airport_pass
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:8083/health']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  ground-control:
+    <<: *airport-service
+    container_name: ground-control
+    command: ['/app/build/GroundControl', '8081']
+    ports:
+      - '8081:8081'
+    environment:
+      GC_PORT: "8081"
+      GC_MAP_PATH: /app/data/airport_map.json
+      INFO_HOST: information-panel
+      INFO_PORT: "8082"
+      FOLLOWME_HOST: followme
+      FOLLOWME_PORT: "8083"
+      BOARD_HOST: board
+      BOARD_PORT: "8084"
+      GC_ADVERTISED_HOST: ground-control
+      GC_ADVERTISED_PORT: "8081"
+    depends_on:
+      information-panel:
+        condition: service_healthy
+      followme:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:8081/health']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - ./data:/app/data:ro
+
+  board:
+    <<: *airport-service
+    container_name: board
+    command: ['/app/build/Board', '8084']
+    ports:
+      - '8084:8084'
+    environment:
+      GC_HOST: ground-control
+      GC_PORT: '8081'
+      INFO_HOST: information-panel
+      INFO_PORT: '8082'
+      BOARD_PORT: '8084'
+      HANDLING_HOST: handling-supervisor
+      HANDLING_PORT: '8085'
+    depends_on:
+      ground-control:
+        condition: service_healthy
+      information-panel:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:8084/health']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  handling-supervisor:
+    build:
+      context: .
+      dockerfile: services/handling_supervisor/Dockerfile
+    container_name: handling-supervisor
+    restart: unless-stopped
+    ports:
+      - '8085:8085'
+    environment:
+      HANDLING_PORT: '8085'
+      GC_HOST: ground-control
+      GC_PORT: '8081'
+      BUS_HOST: passenger-bus
+      BUS_PORT: '8086'
+      BOARD_HOST: board
+      BOARD_PORT: '8084'
+      INFO_HOST: information-panel
+      INFO_PORT: '8082'
+      REFUELER_HOST: refueler
+      REFUELER_PORT: '8088'
+      CATERING_HOST: catering
+      CATERING_PORT: '8089'
+      RABBITMQ_URL: 'amqp://guest:guest@rabbitmq:5672/'
+    depends_on:
+      ground-control:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:8085/health']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - airport-net
+
+  passenger-bus:
+    build:
+      context: .
+      dockerfile: services/passenger_bus/Dockerfile
+    container_name: passenger-bus
+    restart: unless-stopped
+    ports:
+      - '8086:8086'
+    environment:
+      BUS_PORT: '8086'
+      GC_HOST: ground-control
+      GC_PORT: '8081'
+      HANDLING_HOST: handling-supervisor
+      HANDLING_PORT: '8085'
+      BUS_CAPACITY: '20'
+      BUS_DEFAULT_COUNT: '5'
+      RABBITMQ_URL: 'amqp://guest:guest@rabbitmq:5672/'
+    depends_on:
+      ground-control:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:8086/health']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - airport-net
+
+  catering:
+    build:
+      context: .
+      dockerfile: services/catering_truck/Dockerfile
+    container_name: catering
+    restart: unless-stopped
+    ports:
+      - '8089:8089'
+    environment:
+      CATERING_PORT: '8089'
+      GROUND_CONTROL_URL: 'http://ground-control:8081/v1'
+      HS_URL: 'http://handling-supervisor:8085'
+      HS_HOST: handling-supervisor
+      HS_PORT: '8085'
+      RABBITMQ_URL: 'amqp://guest:guest@rabbitmq:5672/'
+    depends_on:
+      ground-control:
+        condition: service_healthy
+      handling-supervisor:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:8089/health']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - airport-net
+
+  refueler:
+    build:
+      context: .
+      dockerfile: services/refueler/Dockerfile
+    container_name: refueler
+    restart: unless-stopped
+    ports:
+      - '8088:8088'
+    environment:
+      REFUELER_PORT: '8088'
+      GROUND_CONTROL_URL: 'http://ground-control:8081/v1'
+      HS_HOST: handling-supervisor
+      HS_PORT: '8085'
+      RABBITMQ_URL: 'amqp://guest:guest@rabbitmq:5672/'
+    depends_on:
+      ground-control:
+        condition: service_healthy
+      handling-supervisor:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:8088/health']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - airport-net
+
+  airport-visualizer:
+    build:
+      context: .
+      dockerfile: services/airport_visualizer/Dockerfile
+    container_name: airport-visualizer
+    restart: unless-stopped
+    ports:
+      - '8087:8087'
+    environment:
+      VISUALIZER_PORT: '8087'
+      GC_HOST: ground-control
+      GC_PORT: '8081'
+      INFO_HOST: information-panel
+      INFO_PORT: '8082'
+      HANDLING_HOST: handling-supervisor
+      HANDLING_PORT: '8085'
+      BUS_HOST: passenger-bus
+      BUS_PORT: '8086'
+      FOLLOWME_HOST: followme
+      FOLLOWME_PORT: '8083'
+      BOARD_HOST: board
+      BOARD_PORT: '8084'
+      CATERING_HOST: catering
+      CATERING_PORT: '8089'
+      GC_MAP_PATH: /app/data/airport_map.json
+    depends_on:
+      ground-control:
+        condition: service_healthy
+      information-panel:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:8087/health']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - airport-net
+    volumes:
+      - ./data:/app/data:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+volumes:
+  pgdata:
+
+networks:
+  airport-net:
+    driver: bridge

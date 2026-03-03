@@ -1,0 +1,1 @@
+ curl -s -X POST "http://localhost:8081/v1/flights/SU100/landed"
