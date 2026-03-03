@@ -1,40 +1,45 @@
-# Catering Truck
+# CateringTruck
 
-Микросервис управления машинами катеринга в аэропорту. Отвечает за инициализацию машин, их перемещение по территории аэропорта и доставку еды к самолётам.
+Микросервис управления машинами катеринга в аэропорту. Получает задание от HandlingSuperviser, самостоятельно прокладывает маршрут по карте аэропорта, движется к самолёту через GroundControl (enter-edge / leave-edge), выполняет обслуживание и возвращается на базу.
 
-Порт: `8009`
+Порт: `8086`
 
 ---
 
 ## Содержание
 
-- [Запуск](#запуск)
+- [Роль в системе](#роль-в-системе)
 - [Архитектура](#архитектура)
+- [Логика миссии](#логика-миссии)
 - [API](#api)
-- [Тесты](#тесты)
-- [Внешние зависимости](#внешние-зависимости)
+- [Переменные окружения](#переменные-окружения)
+- [База данных](#база-данных)
+- [Запуск](#запуск)
 
 ---
 
-## Запуск
+## Роль в системе
 
-### Локально
-
-```bash
-cd CateringTruck
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python -m app.main
+```
+Board  --(POST /v1/handling/request)-->  HandlingSuperviser
+                                               |
+                              (POST /v1/catering/handling/start)
+                                               |
+                                               v
+                                         CateringTruck
+                                               |
+                           (enter-edge / leave-edge per каждому ребру)
+                                               |
+                                               v
+                                        GroundControl
+                                               |
+                   (POST /v1/handling/catering/complete)
+                                               |
+                                               v
+                                       HandlingSuperviser
 ```
 
-Swagger-документация доступна по адресу: `http://localhost:8009/docs`
-
-### Docker
-
-```bash
-docker compose up --build
-```
+CateringTruck не принимает решений о полётах. Он отвечает на входящий триггер от HandlingSuperviser и движется по carRoad-рёбрам карты аэропорта, запрашивая разрешение у GroundControl на каждое ребро.
 
 ---
 
@@ -42,57 +47,121 @@ docker compose up --build
 
 ```
 app/
-├── main.py                       — точка входа, FastAPI app
-├── config.py                     — URL внешних сервисов, порт
-├── dependencies.py               — DI-фабрика сервиса
+├── main.py                        — точка входа, FastAPI lifespan
+├── config.py                      — все настройки через env-переменные
+├── dependencies.py                — DI-синглтон сервиса
 ├── models/
-│   └── catering_truck.py         — доменные модели: CateringTruck, Menu, TruckStatus
+│   └── catering_truck.py          — доменная модель CateringTruck, TruckStatus
 ├── schemas/
-│   └── catering_truck.py         — Pydantic-схемы запросов и ответов
+│   └── catering_truck.py          — Pydantic-схемы запросов и ответов
 ├── storage/
-│   └── repository.py             — in-memory репозиторий
+│   └── repository.py              — PostgreSQL-репозиторий с in-memory кэшем
+├── utils/
+│   └── map_router.py              — BFS по carRoad-рёбрам airport_map.json
 ├── clients/
-│   ├── ground_control.py         — HTTP-клиент Ground Control
-│   ├── handling_supervisor.py    — HTTP-клиент Handling Supervisor
-│   └── board.py                  — HTTP-клиент Board
+│   ├── ground_control.py          — enter-edge, leave-edge, init_vehicles
+│   └── handling_supervisor.py     — notify_stage_complete
 ├── services/
-│   └── catering_truck_service.py — вся бизнес-логика
+│   ├── catering_truck_service.py  — start_handling, выбор свободной машины
+│   └── mission_worker.py          — полная логика миссии (landing / takeoff)
 └── routers/
-    └── catering_trucks.py        — все эндпоинты /v1/catering-trucks
+    └── catering_trucks.py         — HTTP-эндпоинты
 ```
 
-### Слои и их ответственность
+### Слои
 
-**Router** — принимает HTTP-запрос, валидирует тело через Pydantic, вызывает сервис. Не содержит логики.
+**Router** — принимает HTTP-запрос, валидирует тело через Pydantic, вызывает сервис.
 
-**Service** — вся бизнес-логика: проверки, изменения состояния машины, координация вызовов к внешним сервисам.
+**Service** — выбирает свободную машину, резервирует её (статус `reserved`), запускает `MissionWorker` как фоновую asyncio-задачу и немедленно возвращает ответ клиенту.
 
-**Repository** — хранение состояния. Сейчас реализован как `dict` в памяти. Для подключения базы данных достаточно переписать только этот файл — интерфейс методов остаётся прежним.
+**MissionWorker** — выполняет полный сценарий миссии в фоне: движение по маршруту с enter-edge/leave-edge, обслуживание самолёта, возврат на базу, доклад HandlingSuperviser.
 
-**Clients** — изолированные HTTP-клиенты для каждого внешнего сервиса. Сервис не знает про `httpx` и не формирует HTTP-запросы напрямую.
+**AirportMap** — загружает `airport_map.json` один раз при старте, строит граф из рёбер типа `carRoad` и `carRoad|planeRoad`, реализует BFS для поиска кратчайшего пути.
 
-**Dependency Injection** — сервис собирается в `dependencies.py` и передаётся в роутер через `Depends(...)`. Это позволяет в тестах подменить любой компонент без изменения боевого кода.
+**Repository** — хранит состояние в PostgreSQL с потокобезопасным in-memory кэшем. Не затирает `flight_id` при промежуточных обновлениях локации, а обнуляет его только явно при освобождении машины.
+
+**Clients** — изолированные HTTP-клиенты для GroundControl и HandlingSuperviser. Клиент GroundControl реализует цикл retry для enter-edge (ожидание разрешения) и вызывает `on_node_arrived` после каждого leave-edge.
+
+---
+
+## Логика миссии
+
+### Статусы машины
+
+| Статус        | Описание                                          |
+|---------------|---------------------------------------------------|
+| `empty`       | Свободна, стоит на базе                           |
+| `reserved`    | Зарезервирована, миссия ещё не стартовала         |
+| `moveToHub`   | Едет к хабу загрузки (только для takeoff)         |
+| `moveToPlane` | Едет к самолёту                                   |
+| `servicing`   | Обслуживает самолёт у parkingNode                 |
+| `returning`   | Возвращается на базу                              |
+
+### Сценарий landing (посадка)
+
+Самолёт только приземлился, обслуживание — осмотр/уборка/разгрузка без загрузки еды.
+
+```
+empty --> reserved
+база --(moveToPlane)--> parkingNode
+parkingNode: servicing (CT_SERVICE_SEC секунд)
+parkingNode --(returning)--> база
+--> notify HandlingSuperviser (catering/complete)
+--> empty
+```
+
+### Сценарий takeoff (вылет)
+
+Самолёт готовится к вылету, нужно загрузить еду.
+
+```
+empty --> reserved
+база --(moveToHub)--> HUB  (загрузка еды, CT_SERVICE_SEC секунд)
+HUB  --(moveToPlane)--> parkingNode
+parkingNode: servicing (CT_SERVICE_SEC секунд)
+parkingNode --(returning)--> база
+--> notify HandlingSuperviser (catering/complete)
+--> empty
+```
+
+Если `CT_HUB_NODE == CT_BASE_NODE` (по умолчанию), шаг "база -> HUB" пропускается.
+
+### Движение по рёбрам
+
+На каждом ребре маршрута выполняется следующая последовательность:
+
+1. `POST /v1/map/traffic/enter-edge` — запрос разрешения у GroundControl. При `granted: false` — retry с интервалом 1 секунда (до `CT_EDGE_WAIT_TIMEOUT_SEC`).
+2. Ожидание `CT_EDGE_TRAVEL_SEC` секунд (время проезда ребра).
+3. `POST /v1/map/traffic/leave-edge` — освобождение ребра.
+4. Обновление `currentLocation` в репозитории.
 
 ---
 
 ## API
 
-Базовый путь: `/v1/catering-trucks`
+### GET /health
+
+Проверка работоспособности. Используется Docker healthcheck.
+
+**Ответ `200`**
+```json
+{"service": "CateringTruck", "status": "ok"}
+```
 
 ---
 
 ### GET /v1/catering-trucks
 
-Возвращает список всех зарегистрированных машин.
+Список всех зарегистрированных машин.
 
 **Ответ `200`**
 ```json
 [
   {
-    "id": "CT-001",
+    "id": "CT-1",
     "capacity": 100,
-    "status": "free",
-    "currentLocation": "G11",
+    "status": "empty",
+    "currentLocation": "FS-1",
     "menu": {
       "chicken": 0,
       "pork": 0,
@@ -107,208 +176,134 @@ app/
 
 ### GET /v1/catering-trucks/{id}
 
-Возвращает информацию о конкретной машине.
+Информация о конкретной машине.
 
-**Параметры пути**
-
-| Параметр | Тип    | Описание               |
-|----------|--------|------------------------|
-| `id`     | string | Идентификатор машины   |
-
-**Ответы**
-
-| Код | Описание                  |
-|-----|---------------------------|
-| 200 | Машина найдена            |
+| Код | Описание                     |
+|-----|------------------------------|
+| 200 | Машина найдена               |
 | 404 | Машина с таким ID не найдена |
 
 ---
 
 ### POST /v1/catering-trucks/init
 
-Инициализирует новую машину в заданной точке карты.
+Инициализирует новую машину в заданном узле карты и регистрирует её в GroundControl.
 
 **Тело запроса**
 ```json
 {
-  "id": "CT-001",
-  "location": "G11"
+  "id": "CT-1",
+  "location": "FS-1"
 }
 ```
 
-**Ответы**
-
-| Код | Описание                             |
-|-----|--------------------------------------|
-| 200 | Машина успешно инициализирована      |
-| 400 | Машина с таким ID уже существует, или точка занята |
+| Код | Описание                                         |
+|-----|--------------------------------------------------|
+| 200 | Машина успешно инициализирована                  |
+| 400 | Машина с таким ID уже существует, или узел занят |
 
 ---
 
-### GET /v1/catering-trucks/{id}/move-permission
+### POST /v1/catering/handling/start
 
-Запрашивает у Ground Control разрешение на движение из точки A в точку B.
+Основной триггер от HandlingSuperviser. Запускает миссию в фоне и сразу возвращает ответ.
 
-**Параметры пути**
+**Тело запроса**
+```json
+{
+  "flightId": "SU100",
+  "missionType": "takeoff",
+  "parkingNode": "P-3"
+}
+```
 
-| Параметр | Тип    | Описание             |
-|----------|--------|----------------------|
-| `id`     | string | Идентификатор машины |
-
-**Query-параметры**
-
-| Параметр | Тип    | Описание         |
-|----------|--------|------------------|
-| `from`   | string | Начальная точка  |
-| `to`     | string | Конечная точка   |
+| Поле          | Тип                       | Описание                          |
+|---------------|---------------------------|-----------------------------------|
+| `flightId`    | string                    | Идентификатор рейса               |
+| `missionType` | `"landing"` / `"takeoff"` | Тип миссии                        |
+| `parkingNode` | string                    | Узел парковки самолёта (P-1..P-5) |
 
 **Ответ `200`**
 ```json
-{
-  "allowed": true,
-  "message": "Permission granted"
-}
+{"ok": true, "vehicleId": "CT-1"}
 ```
 
-**Ответы**
-
-| Код | Описание                        |
-|-----|---------------------------------|
-| 200 | Ответ от Ground Control получен |
-| 400 | Некорректные параметры          |
-| 403 | Движение запрещено              |
-| 503 | Ground Control недоступен       |
+| Код | Описание                    |
+|-----|-----------------------------|
+| 200 | Миссия поставлена в очередь |
+| 503 | Нет свободных машин         |
 
 ---
 
-### POST /v1/catering-trucks/{id}/move
+## Переменные окружения
 
-Уведомляет Ground Control о начале движения. Переводит машину в статус `busy`.
-
-**Тело запроса**
-```json
-{
-  "from": "G11",
-  "to": "E15"
-}
-```
-
-**Ответы**
-
-| Код | Описание                  |
-|-----|---------------------------|
-| 200 | Движение зарегистрировано |
-| 400 | Некорректные данные       |
-| 503 | Ground Control недоступен |
-
----
-
-### POST /v1/catering-trucks/{id}/arrived
-
-Подтверждает прибытие в конечную точку. Обновляет `currentLocation`, переводит статус в `free`.
-
-**Тело запроса**
-```json
-{
-  "from": "G11",
-  "to": "E15"
-}
-```
-
-**Ответы**
-
-| Код | Описание                  |
-|-----|---------------------------|
-| 200 | Прибытие подтверждено     |
-| 400 | Некорректные данные       |
-| 503 | Ground Control недоступен |
+| Переменная                 | По умолчанию              | Описание                                      |
+|----------------------------|---------------------------|-----------------------------------------------|
+| `CT_PORT`                  | `8086`                    | Порт сервиса                                  |
+| `GC_HOST`                  | `localhost`               | Хост GroundControl                            |
+| `GC_PORT`                  | `8081`                    | Порт GroundControl                            |
+| `HS_HOST`                  | `localhost`               | Хост HandlingSuperviser                       |
+| `HS_PORT`                  | `8085`                    | Порт HandlingSuperviser                       |
+| `CT_PG_HOST`               | `localhost`               | Хост PostgreSQL                               |
+| `CT_PG_PORT`               | `5432`                    | Порт PostgreSQL                               |
+| `CT_PG_DB`                 | `airport`                 | Имя базы данных                               |
+| `CT_PG_USER`               | `airport_user`            | Пользователь БД                               |
+| `CT_PG_PASSWORD`           | `airport_pass`            | Пароль БД                                     |
+| `CT_MAP_PATH`              | `/app/data/airport_map.json` | Путь к карте аэропорта                     |
+| `CT_BASE_NODE`             | `FS-1`                    | Базовый узел (стартовая позиция)              |
+| `CT_HUB_NODE`              | `= CT_BASE_NODE`          | Узел загрузки еды (для takeoff)               |
+| `CT_EDGE_TRAVEL_SEC`       | `1`                       | Время проезда одного ребра (сек)              |
+| `CT_SERVICE_SEC`           | `5`                       | Время обслуживания у самолёта (сек)           |
+| `CT_EDGE_WAIT_TIMEOUT_SEC` | `90`                      | Таймаут ожидания разрешения enter-edge (сек)  |
 
 ---
 
-### POST /v1/catering-trucks/{id}/load-food
+## База данных
 
-Загружает набор блюд в машину. Проверяет, что суммарный объём не превышает `capacity` (100 по умолчанию).
+Используется общая PostgreSQL-база аэропорта. Таблица создаётся автоматически при старте сервиса (скрипт `db/init/003_catering_truck.sql`).
 
-**Тело запроса**
-```json
-{
-  "menu": {
-    "chicken": 30,
-    "pork": 20,
-    "fish": 10,
-    "vegetarian": 5
-  }
-}
+```sql
+CREATE TABLE IF NOT EXISTS catering_trucks (
+    vehicle_id    VARCHAR(64) PRIMARY KEY,
+    current_node  VARCHAR(64) NOT NULL,
+    status        VARCHAR(32) NOT NULL
+                    CHECK (status IN ('empty','reserved','moveToHub',
+                                      'moveToPlane','servicing','returning')),
+    flight_id     VARCHAR(64),
+    mission_type  VARCHAR(32),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 ```
-
-**Ответы**
-
-| Код | Описание                              |
-|-----|---------------------------------------|
-| 200 | Еда загружена                         |
-| 400 | Превышена вместимость или некорректные данные |
 
 ---
 
-### POST /v1/catering-trucks/{id}/deliver-food
+## Запуск
 
-Доставляет еду к самолёту:
-
-1. Запрашивает детали доставки у Board.
-2. Уведомляет Handling Supervisor о завершении доставки.
-3. Сбрасывает меню машины, переводит статус в `free`.
-
-**Тело запроса**
-```json
-{
-  "planeId": "PL-001"
-}
-```
-
-**Ответы**
-
-| Код | Описание                             |
-|-----|--------------------------------------|
-| 200 | Еда доставлена                       |
-| 400 | Некорректные данные                  |
-| 503 | Board или Handling Supervisor недоступен |
-
----
-
-## Тесты
-
-Тесты изолированы от всех внешних сервисов: вместо реальных HTTP-клиентов используются заглушки из `tests/mocks.py`. Каждый тест получает чистое in-memory хранилище.
+### Локально
 
 ```bash
-python -m pytest tests/ -v
+cd CateringTruck
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+export GC_HOST=localhost GC_PORT=8081
+export HS_HOST=localhost HS_PORT=8085
+export CT_PG_HOST=localhost CT_PG_DB=airport CT_PG_USER=airport_user CT_PG_PASSWORD=airport_pass
+
+python -m app.main
 ```
 
-Покрытие:
+Swagger-документация: `http://localhost:8086/docs`
 
-| Тест                               | Что проверяет                                 |
-|------------------------------------|-----------------------------------------------|
-| `test_list_empty`                  | Пустой список при старте                      |
-| `test_init_truck`                  | Успешная инициализация                        |
-| `test_init_truck_duplicate`        | 400 при повторной инициализации с тем же ID   |
-| `test_init_truck_occupied_location`| 400 при инициализации в занятой точке         |
-| `test_get_truck`                   | 200, корректные поля                          |
-| `test_get_truck_not_found`         | 404 для несуществующей машины                 |
-| `test_list_after_init`             | Список содержит добавленную машину            |
-| `test_move_permission`             | Мок возвращает `allowed: true`                |
-| `test_move`                        | Статус становится `busy`                      |
-| `test_arrived`                     | Локация обновляется, статус становится `free` |
-| `test_load_food`                   | Меню обновляется корректно                    |
-| `test_load_food_exceeds_capacity`  | 400 при превышении вместимости                |
-| `test_deliver_food`                | Меню сбрасывается, статус `free`              |
+### Docker Compose (рекомендуется)
 
----
+```bash
+# из корня репозитория
+docker compose up --build
 
-## Внешние зависимости
+# инициализация машин
+./scripts/init_catering_trucks.sh
+```
 
-| Сервис               | URL по умолчанию            | Когда используется                         |
-|----------------------|-----------------------------|--------------------------------------------|
-| Ground Control       | `http://localhost:8001`     | move-permission, move, arrived             |
-| Handling Supervisor  | `http://localhost:8003`     | deliver-food                               |
-| Board                | `http://localhost:8004`     | deliver-food (уточнение деталей доставки)  |
-
-URL настраиваются в [app/config.py](app/config.py).
+Контейнер ожидает готовности `postgres` и `ground-control` перед стартом (`depends_on: condition: service_healthy`).

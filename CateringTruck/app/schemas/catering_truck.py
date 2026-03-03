@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -36,6 +38,18 @@ class DeliverFoodRequest(BaseModel):
     """Тело запроса на доставку еды к самолёту."""
 
     planeId: str
+
+
+class StartHandlingRequest(BaseModel):
+    """
+    Тело запроса от HandlingSuperviser: начать обслуживание самолёта.
+    """
+    flight_id:    str = Field(alias="flightId")
+    mission_type: Literal["landing", "takeoff"] = Field(
+        alias="missionType", default="landing")
+    parking_node: str = Field(alias="parkingNode")
+
+    model_config = {"populate_by_name": True}
 
 
 class SuccessResponse(BaseModel):

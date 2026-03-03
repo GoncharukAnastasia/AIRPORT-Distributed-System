@@ -4,10 +4,18 @@ from pydantic import BaseModel
 
 
 class TruckStatus(str, Enum):
-    """Возможные статусы машины катеринга."""
+    """Возможные статусы машины катеринга (аналогично FollowMe)."""
 
-    FREE = "free"
-    BUSY = "busy"
+    EMPTY = "empty"           # свободна, стоит на базе
+    RESERVED = "reserved"        # зарезервирована под рейс
+    MOVE_TO_HUB = "moveToHub"       # едет на хаб загрузки еды (взлёт)
+    MOVE_TO_PLANE = "moveToPlane"    # едет к самолёту
+    SERVICING = "servicing"       # обслуживает самолёт у стойки
+    RETURNING = "returning"       # возвращается на базу
+
+    # legacy aliases (keep for backward compat)
+    FREE = "empty"
+    BUSY = "moveToPlane"
 
 
 class Menu(BaseModel):
