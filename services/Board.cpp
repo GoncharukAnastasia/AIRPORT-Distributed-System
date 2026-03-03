@@ -379,7 +379,9 @@ private:
             {"callbackPort", a.boardCallbackPort},
             {"completeAfterSec", a.handlingCompleteAfterSec},
             {"retryEverySec", 2},
-            {"services", json::array({"fuel", "catering", "boarding", "baggage"})}
+            {"services", json::array({"fuel", "catering", "boarding", "baggage"})},
+            {"parkingNode", a.parkingNode},
+            {"missionType", "takeoff"}
         });
 
         // Если HandlingSupervisor недоступен — не падаем навсегда, просто ретраим позже
@@ -399,7 +401,9 @@ private:
                 {"callbackPort", a.boardCallbackPort},
                 {"completeAfterSec", a.handlingCompleteAfterSec},
                 {"retryEverySec", 2},
-                {"services", json::array({"fuel", "catering", "boarding", "baggage"})}
+                {"services", json::array({"fuel", "catering", "boarding", "baggage"})},
+                {"parkingNode", a.parkingNode},
+                {"missionType", "takeoff"}
             });
             if (!ping.ok()) {
                 a.lastError = "handling request retry http error";

@@ -40,13 +40,19 @@ struct HandlingTask {
     int64_t createdAt = 0;
     int64_t updatedAt = 0;
 
+    // Дополнительно: тип миссии и парковка (для наземных служб)
+    std::string missionType = "landing";  // landing | takeoff
+    std::string parkingNode;              // узел парковки самолёта
+
     std::thread th;
 };
 
 class HandlingSupervisorService {
 public:
-    HandlingSupervisorService(std::string boardHost, int boardPort)
-        : boardHost_(std::move(boardHost)), boardPort_(boardPort) {}
+    HandlingSupervisorService(std::string boardHost, int boardPort,
+                              std::string cateringHost, int cateringPort)
+        : boardHost_(std::move(boardHost)), boardPort_(boardPort)
+        , cateringHost_(std::move(cateringHost)), cateringPort_(cateringPort) {}
 
     void run(int port) {
         httplib::Server svr;
@@ -105,6 +111,8 @@ public:
             t->callbackPort = body.value("callbackPort", boardPort_);
             t->completeAfterSec = body.value("completeAfterSec", 5);
             t->retryEverySec = body.value("retryEverySec", 2);
+            t->missionType = body.value("missionType", std::string("landing"));
+            t->parkingNode = body.value("parkingNode", std::string(""));
             t->createdAt = app::now_sec();
             t->updatedAt = t->createdAt;
             t->state = "waiting";
@@ -113,6 +121,11 @@ public:
             tp->th = std::thread([this, tp]() { notify_loop(*tp); });
 
             tasks_[flightId] = std::move(t);
+
+            // Запускаем CateringTruck (fire-and-forget, не блокируем ответ Board)
+            if (!cateringHost_.empty() && !tasks_[flightId]->parkingNode.empty()) {
+                trigger_catering_truck(flightId, tasks_[flightId]->missionType, tasks_[flightId]->parkingNode);
+            }
 
             app::reply_json(res, 200, {
                 {"ok", true},
@@ -133,11 +146,39 @@ public:
                     {"callbackPort", t->callbackPort},
                     {"acked", t->acked.load()},
                     {"state", t->state},
+                    {"missionType", t->missionType},
+                    {"parkingNode", t->parkingNode},
                     {"createdAt", t->createdAt},
                     {"updatedAt", t->updatedAt}
                 });
             }
             app::reply_json(res, 200, {{"tasks", arr}});
+        });
+
+        // CateringTruck -> HandlingSuperviser: этап обслуживания завершён
+        svr.Post("/v1/handling/catering/complete", [&](const httplib::Request& req, httplib::Response& res) {
+            auto bodyOpt = app::parse_json_body(req);
+            if (!bodyOpt) {
+                app::reply_json(res, 400, {{"error", "invalid json"}});
+                return;
+            }
+            const auto& body = *bodyOpt;
+            const std::string flightId    = app::s_or(body, "flightId");
+            const std::string vehicleId   = app::s_or(body, "vehicleId");
+            const std::string missionType = body.value("missionType", std::string("landing"));
+            const std::string status      = body.value("status", std::string("completed"));
+
+            if (flightId.empty()) {
+                app::reply_json(res, 400, {{"error", "flightId required"}});
+                return;
+            }
+
+            std::cerr << "[HandlingSupervisor] CateringTruck stage done: flight=" << flightId
+                      << " vehicle=" << vehicleId
+                      << " missionType=" << missionType
+                      << " status=" << status << "\n";
+
+            app::reply_json(res, 200, {{"ok", true}, {"flightId", flightId}});
         });
 
         std::cout << "[HandlingSupervisor] listening on 0.0.0.0:" << port << "\n";
@@ -184,6 +225,30 @@ private:
         }
     }
 
+    void trigger_catering_truck(const std::string& flightId,
+                                 const std::string& missionType,
+                                 const std::string& parkingNode) {
+        // fire-and-forget в отдельном потоке
+        std::thread([this, flightId, missionType, parkingNode]() {
+            auto r = app::http_post_json(
+                cateringHost_, cateringPort_,
+                "/v1/catering/handling/start",
+                {
+                    {"flightId",    flightId},
+                    {"missionType", missionType},
+                    {"parkingNode", parkingNode}
+                }
+            );
+            if (!r.ok()) {
+                std::cerr << "[HandlingSupervisor] CateringTruck start failed: "
+                          << r.error << " status=" << r.status << "\n";
+            } else {
+                std::cerr << "[HandlingSupervisor] CateringTruck started for flight="
+                          << flightId << "\n";
+            }
+        }).detach();
+    }
+
     void stop_all() {
         std::unordered_map<std::string, std::unique_ptr<HandlingTask>> tmp;
         {
@@ -205,6 +270,9 @@ private:
     std::string boardHost_ = "localhost";
     int boardPort_ = 8084;
 
+    std::string cateringHost_ = "localhost";
+    int cateringPort_ = 8086;
+
     std::mutex mtx_;
     std::unordered_map<std::string, std::unique_ptr<HandlingTask>> tasks_;
 };
@@ -213,10 +281,12 @@ int main(int argc, char** argv) {
     int port = env_or_int("HANDLING_PORT", 8085);
     if (argc > 1) port = std::stoi(argv[1]);
 
-    std::string boardHost = env_or("BOARD_HOST", "localhost");
-    int boardPort = env_or_int("BOARD_PORT", 8084);
+    std::string boardHost    = env_or("BOARD_HOST",    "localhost");
+    int boardPort            = env_or_int("BOARD_PORT", 8084);
+    std::string cateringHost = env_or("CATERING_HOST", "localhost");
+    int cateringPort         = env_or_int("CATERING_PORT", 8086);
 
-    HandlingSupervisorService s(boardHost, boardPort);
+    HandlingSupervisorService s(boardHost, boardPort, cateringHost, cateringPort);
     s.run(port);
     return 0;
 }

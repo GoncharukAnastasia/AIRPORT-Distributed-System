@@ -142,11 +142,54 @@ services:
       HANDLING_PORT: '8085'
       BOARD_HOST: board
       BOARD_PORT: '8084'
+      CATERING_HOST: catering-truck
+      CATERING_PORT: '8086'
+    depends_on:
+      catering-truck:
+        condition: service_healthy
     healthcheck:
       test: ['CMD', 'curl', '-fsS', 'http://localhost:8085/health']
       interval: 5s
       timeout: 3s
       retries: 20
+
+  catering-truck:
+    build:
+      context: ./CateringTruck
+      dockerfile: Dockerfile
+    container_name: catering-truck
+    restart: unless-stopped
+    ports:
+      - '8086:8086'
+    environment:
+      CT_PORT: '8086'
+      GC_HOST: ground-control
+      GC_PORT: '8081'
+      HS_HOST: handling-superviser
+      HS_PORT: '8085'
+      CT_PG_HOST: postgres
+      CT_PG_PORT: '5432'
+      CT_PG_DB: airport
+      CT_PG_USER: airport_user
+      CT_PG_PASSWORD: airport_pass
+      CT_MAP_PATH: /app/data/airport_map.json
+      CT_BASE_NODE: 'FS-1'
+      CT_EDGE_TRAVEL_SEC: '1'
+      CT_SERVICE_SEC: '5'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ground-control:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'python3', '-c', 'import urllib.request; urllib.request.urlopen("http://localhost:8086/health")']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - ./data:/app/data:ro
+    networks:
+      - airport-net
 
 volumes:
   pgdata:

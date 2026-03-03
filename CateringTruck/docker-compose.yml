@@ -1,0 +1,11 @@
+services:
+  catering-truck:
+    build: .
+    container_name: catering-truck
+    ports:
+      - "8009:8009"
+    environment:
+      - GROUND_CONTROL_URL=http://ground-control:8001
+      - HANDLING_SUPERVISOR_URL=http://handling-supervisor:8003
+      - BOARD_URL=http://board:8004
+    restart: unless-stopped
