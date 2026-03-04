@@ -1,1 +1,0 @@
-curl -s "http://localhost:8084/v1/planes"
