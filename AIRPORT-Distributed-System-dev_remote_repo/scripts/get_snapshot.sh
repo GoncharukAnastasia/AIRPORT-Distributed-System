@@ -1,0 +1,1 @@
+curl -s "http://localhost:8081/v1/visualizer/snapshot"
