@@ -1,0 +1,575 @@
+{
+  "nodes": [
+    {
+      "name": "PCR-1",
+      "capacity": 1,
+      "type": "planeCrossroad"
+    },
+    {
+      "name": "PCR-2",
+      "capacity": 1,
+      "type": "planeCrossroad"
+    },
+    {
+      "name": "PCR-3",
+      "capacity": 1,
+      "type": "planeCrossroad"
+    },
+    {
+      "name": "PCR-4",
+      "capacity": 1,
+      "type": "planeCrossroad"
+    },
+    {
+      "name": "PCR-5",
+      "capacity": 1,
+      "type": "planeCrossroad"
+    },
+    {
+      "name": "P-1",
+      "capacity": 1,
+      "type": "planeParking"
+    },
+    {
+      "name": "P-2",
+      "capacity": 1,
+      "type": "planeParking"
+    },
+    {
+      "name": "P-3",
+      "capacity": 1,
+      "type": "planeParking"
+    },
+    {
+      "name": "P-4",
+      "capacity": 1,
+      "type": "planeParking"
+    },
+    {
+      "name": "P-5",
+      "capacity": 1,
+      "type": "planeParking"
+    },
+    {
+      "name": "RE-1",
+      "capacity": 1,
+      "type": "runwayEntrance"
+    },
+    {
+      "name": "RW-1",
+      "capacity": 1,
+      "type": "runwayOut"
+    },
+    {
+      "name": "FS-1",
+      "capacity": 3,
+      "type": "followMeStation"
+    },
+    {
+      "name": "CR-1",
+      "capacity": 1,
+      "type": "crossRoad"
+    },
+    {
+      "name": "CR-2",
+      "capacity": 1,
+      "type": "crossRoad"
+    },
+    {
+      "name": "CR-3",
+      "capacity": 1,
+      "type": "crossRoad"
+    },
+    {
+      "name": "CR-4",
+      "capacity": 1,
+      "type": "crossRoad"
+    },
+    {
+      "name": "CR-5",
+      "capacity": 1,
+      "type": "crossRoad"
+    },
+    {
+      "name": "CP-11",
+      "capacity": 1,
+      "type": "planeServicing"
+    },
+    {
+      "name": "CP-12",
+      "capacity": 1,
+      "type": "planeServicing"
+    },
+    {
+      "name": "CP-21",
+      "capacity": 1,
+      "type": "planeServicing"
+    },
+    {
+      "name": "CP-22",
+      "capacity": 1,
+      "type": "planeServicing"
+    },
+    {
+      "name": "CP-31",
+      "capacity": 1,
+      "type": "planeServicing"
+    },
+    {
+      "name": "CP-32",
+      "capacity": 1,
+      "type": "planeServicing"
+    },
+    {
+      "name": "CP-41",
+      "capacity": 1,
+      "type": "planeServicing"
+    },
+    {
+      "name": "CP-42",
+      "capacity": 1,
+      "type": "planeServicing"
+    },
+    {
+      "name": "CP-51",
+      "capacity": 1,
+      "type": "planeServicing"
+    },
+    {
+      "name": "CP-52",
+      "capacity": 1,
+      "type": "planeServicing"
+    },
+    {
+      "name": "CS-1",
+      "capacity": 1,
+      "type": "cateringService"
+    },
+    {
+      "name": "BW-1",
+      "capacity": 1,
+      "type": "baggageWarehouse"
+    },
+    {
+      "name": "XT-1",
+      "capacity": 1,
+      "type": "exit"
+    },
+    {
+      "name": "RS-1",
+      "capacity": 1,
+      "type": "refuelStation"
+    },
+    {
+      "name": "CG-1",
+      "capacity": 1,
+      "type": "carGarage"
+    },
+    {
+      "name": "G-11",
+      "capacity": 1,
+      "type": "gate"
+    },
+    {
+      "name": "G-12",
+      "capacity": 1,
+      "type": "gate"
+    },
+    {
+      "name": "BR-11",
+      "capacity": 1,
+      "type": "baggageRoom"
+    },
+    {
+      "name": "G-21",
+      "capacity": 1,
+      "type": "gate"
+    },
+    {
+      "name": "G-22",
+      "capacity": 1,
+      "type": "gate"
+    },
+    {
+      "name": "BR-21",
+      "capacity": 1,
+      "type": "baggageRoom"
+    },
+    {
+      "name": "G-31",
+      "capacity": 1,
+      "type": "gate"
+    },
+    {
+      "name": "G-32",
+      "capacity": 1,
+      "type": "gate"
+    },
+    {
+      "name": "BR-31",
+      "capacity": 1,
+      "type": "baggageRoom"
+    },
+    {
+      "name": "G-41",
+      "capacity": 1,
+      "type": "gate"
+    },
+    {
+      "name": "G-42",
+      "capacity": 1,
+      "type": "gate"
+    },
+    {
+      "name": "BR-41",
+      "capacity": 1,
+      "type": "baggageRoom"
+    },
+    {
+      "name": "G-51",
+      "capacity": 1,
+      "type": "gate"
+    },
+    {
+      "name": "G-52",
+      "capacity": 1,
+      "type": "gate"
+    },
+    {
+      "name": "BR-51",
+      "capacity": 1,
+      "type": "baggageRoom"
+    }
+  ],
+  "edges": [
+    {
+      "name": "E-36",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "FS-1",
+      "node2": "RE-1"
+    },
+    {
+      "name": "EP-37",
+      "capacity": 1,
+      "type": "carRoad|planeRoad",
+      "node1": "RE-1",
+      "node2": "RW-1"
+    },
+    {
+      "name": "EP-38",
+      "capacity": 2,
+      "type": "carRoad|planeRoad",
+      "node1": "RE-1",
+      "node2": "PCR-5"
+    },
+    {
+      "name": "EP-39",
+      "capacity": 2,
+      "type": "carRoad|planeRoad",
+      "node1": "PCR-5",
+      "node2": "PCR-4"
+    },
+    {
+      "name": "EP-40",
+      "capacity": 2,
+      "type": "carRoad|planeRoad",
+      "node1": "PCR-4",
+      "node2": "PCR-3"
+    },
+    {
+      "name": "EP-41",
+      "capacity": 2,
+      "type": "carRoad|planeRoad",
+      "node1": "PCR-3",
+      "node2": "PCR-2"
+    },
+    {
+      "name": "EP-42",
+      "capacity": 2,
+      "type": "carRoad|planeRoad",
+      "node1": "PCR-2",
+      "node2": "PCR-1"
+    },
+    {
+      "name": "ES-43",
+      "capacity": 2,
+      "type": "carRoad|planeRoad",
+      "node1": "PCR-1",
+      "node2": "P-1"
+    },
+    {
+      "name": "ES-44",
+      "capacity": 2,
+      "type": "carRoad|planeRoad",
+      "node1": "PCR-2",
+      "node2": "P-2"
+    },
+    {
+      "name": "ES-45",
+      "capacity": 2,
+      "type": "carRoad|planeRoad",
+      "node1": "PCR-3",
+      "node2": "P-3"
+    },
+    {
+      "name": "ES-46",
+      "capacity": 2,
+      "type": "carRoad|planeRoad",
+      "node1": "PCR-4",
+      "node2": "P-4"
+    },
+    {
+      "name": "ES-47",
+      "capacity": 2,
+      "type": "carRoad|planeRoad",
+      "node1": "PCR-5",
+      "node2": "P-5"
+    },
+    {
+      "name": "E-35",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-5",
+      "node2": "FS-1"
+    },
+    {
+      "name": "E-1",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-1",
+      "node2": "CP-11"
+    },
+    {
+      "name": "E-2",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-1",
+      "node2": "CP-12"
+    },
+    {
+      "name": "E-3",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-2",
+      "node2": "CP-21"
+    },
+    {
+      "name": "E-4",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-2",
+      "node2": "CP-22"
+    },
+    {
+      "name": "E-5",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-3",
+      "node2": "CP-31"
+    },
+    {
+      "name": "E-6",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-3",
+      "node2": "CP-32"
+    },
+    {
+      "name": "E-7",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-4",
+      "node2": "CP-41"
+    },
+    {
+      "name": "E-8",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-4",
+      "node2": "CP-42"
+    },
+    {
+      "name": "E-9",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-5",
+      "node2": "CP-51"
+    },
+    {
+      "name": "E-10",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-5",
+      "node2": "CP-52"
+    },
+    {
+      "name": "E-11",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-1",
+      "node2": "CR-2"
+    },
+    {
+      "name": "E-12",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-2",
+      "node2": "CR-3"
+    },
+    {
+      "name": "E-13",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-3",
+      "node2": "CR-4"
+    },
+    {
+      "name": "E-14",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-4",
+      "node2": "CR-5"
+    },
+    {
+      "name": "E-30",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-1",
+      "node2": "CS-1"
+    },
+    {
+      "name": "E-31",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-1",
+      "node2": "BW-1"
+    },
+    {
+      "name": "E-32",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-1",
+      "node2": "XT-1"
+    },
+    {
+      "name": "E-33",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-1",
+      "node2": "CG-1"
+    },
+    {
+      "name": "E-34",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-5",
+      "node2": "RS-1"
+    },
+    {
+      "name": "E-15",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-1",
+      "node2": "G-11"
+    },
+    {
+      "name": "E-16",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-1",
+      "node2": "G-12"
+    },
+    {
+      "name": "E-17",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-1",
+      "node2": "BR-11"
+    },
+    {
+      "name": "E-18",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-2",
+      "node2": "G-21"
+    },
+    {
+      "name": "E-19",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-2",
+      "node2": "G-22"
+    },
+    {
+      "name": "E-20",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-2",
+      "node2": "BR-21"
+    },
+    {
+      "name": "E-21",
+      "capacity": 3,
+      "type": "carRoad",
+      "node1": "CR-3",
+      "node2": "G-31"
+    },
+    {
+      "name": "E-22",
+      "capacity": 3,
+      "type": "carRoad",
+      "node1": "CR-3",
+      "node2": "G-32"
+    },
+    {
+      "name": "E-23",
+      "capacity": 3,
+      "type": "carRoad",
+      "node1": "CR-3",
+      "node2": "BR-31"
+    },
+    {
+      "name": "E-24",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-4",
+      "node2": "G-41"
+    },
+    {
+      "name": "E-25",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-4",
+      "node2": "G-42"
+    },
+    {
+      "name": "E-26",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-4",
+      "node2": "BR-41"
+    },
+    {
+      "name": "E-27",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-5",
+      "node2": "G-51"
+    },
+    {
+      "name": "E-28",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-5",
+      "node2": "G-52"
+    },
+    {
+      "name": "E-29",
+      "capacity": 2,
+      "type": "carRoad",
+      "node1": "CR-5",
+      "node2": "BR-51"
+    }
+  ]
+}
