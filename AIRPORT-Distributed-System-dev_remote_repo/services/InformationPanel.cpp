@@ -358,7 +358,7 @@ public:
                 COALESCE(runway, '') AS runway,
                 phase,
                 COALESCE(parking_node, '') AS parking_node,
-                COALESCE(auto_manage, FALSE) AS auto_manage,
+                CASE WHEN COALESCE(auto_manage, FALSE) THEN 1 ELSE 0 END AS auto_manage_i,
                 updated_at
             FROM info_flights
             ORDER BY flight_id
@@ -383,7 +383,7 @@ public:
             rec.runway = row["runway"].as<std::string>();
             rec.phase = row["phase"].as<std::string>();
             rec.parkingNode = row["parking_node"].as<std::string>();
-            rec.autoManage = row["auto_manage"].as<bool>();
+            rec.autoManage = row["auto_manage_i"].as<int>() != 0;
             rec.updatedAt = row["updated_at"].as<int64_t>();
 
             if (rec.scheduledTime.empty()) {
@@ -410,6 +410,7 @@ public:
         pqxx::work tx(cx);
 
         for (const auto& rec : flights) {
+            const std::string autoManageStr = rec.autoManage ? "true" : "false";
             tx.exec_params(R"sql(
                 INSERT INTO info_flights (
                     flight_id,
@@ -432,7 +433,7 @@ public:
                 VALUES (
                     $1, $2, $3, $4, $5,
                     $6, $7, $8, $9, $10,
-                    $11, $12, $13, NULLIF($14, ''), $15, $16
+                    $11, $12, $13, NULLIF($14, ''), $15::boolean, $16
                 )
                 ON CONFLICT (flight_id) DO UPDATE SET
                     plane_id = EXCLUDED.plane_id,
@@ -465,7 +466,7 @@ public:
                 rec.runway,
                 rec.phase,
                 rec.parkingNode,
-                rec.autoManage,
+                autoManageStr,
                 rec.updatedAt
             );
         }
