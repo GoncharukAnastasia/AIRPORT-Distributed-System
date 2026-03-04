@@ -29,12 +29,14 @@ add_executable(GroundControl    services/GroundControl.cpp)
 add_executable(FollowMe         services/FollowMe.cpp)
 add_executable(Board            services/Board.cpp)
 add_executable(HandlingSuperviser services/HandlingSuperviser.cpp)
+add_executable(Refueler         services/Refueler.cpp)
 
 target_include_directories(InformationPanel     PRIVATE ${CMAKE_SOURCE_DIR}/shared)
 target_include_directories(GroundControl        PRIVATE ${CMAKE_SOURCE_DIR}/shared)
 target_include_directories(FollowMe             PRIVATE ${CMAKE_SOURCE_DIR}/shared)
 target_include_directories(Board                PRIVATE ${CMAKE_SOURCE_DIR}/shared)
 target_include_directories(HandlingSuperviser   PRIVATE ${CMAKE_SOURCE_DIR}/shared)
+target_include_directories(Refueler             PRIVATE ${CMAKE_SOURCE_DIR}/shared)
 
 target_link_libraries(InformationPanel PRIVATE
         httplib::httplib
@@ -45,6 +47,11 @@ target_link_libraries(GroundControl PRIVATE httplib::httplib nlohmann_json::nloh
 target_link_libraries(Board PRIVATE httplib::httplib nlohmann_json::nlohmann_json)
 target_link_libraries(HandlingSuperviser PRIVATE httplib::httplib nlohmann_json::nlohmann_json)
 target_link_libraries(FollowMe PRIVATE
+        httplib::httplib
+        nlohmann_json::nlohmann_json
+        PkgConfig::LIBPQXX
+)
+target_link_libraries(Refueler PRIVATE
         httplib::httplib
         nlohmann_json::nlohmann_json
         PkgConfig::LIBPQXX

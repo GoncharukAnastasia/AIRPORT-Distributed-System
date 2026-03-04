@@ -4,9 +4,9 @@ CREATE TABLE IF NOT EXISTS followme_vehicles (
                                                  status       TEXT NOT NULL DEFAULT 'empty',
                                                  flight_id    TEXT NULL,
                                                  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT chk_followme_status CHECK (
-                                             status IN ('empty', 'reserved', 'moveToLandingPosition', 'movingWithPlane', 'returning')
-    )
+                                                 CONSTRAINT chk_followme_status CHECK (
+                                                    status IN ('empty', 'reserved', 'moveToLandingPosition', 'moveToPlane', 'movingWithPlane', 'returning')
+                                                 )
     );
 
 CREATE INDEX IF NOT EXISTS idx_followme_status ON followme_vehicles(status);

@@ -39,7 +39,14 @@ public:
                 flight_id    TEXT NULL,
                 updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 CONSTRAINT chk_followme_status CHECK (
-                    status IN ('empty', 'reserved', 'moveToLandingPosition', 'movingWithPlane', 'returning')
+                    status IN (
+                        'empty',
+                        'reserved',
+                        'moveToLandingPosition',
+                        'moveToPlane',
+                        'movingWithPlane',
+                        'returning'
+                    )
                 )
             );
         )sql");

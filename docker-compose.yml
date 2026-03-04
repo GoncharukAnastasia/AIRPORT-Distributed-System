@@ -135,15 +135,47 @@ services:
   handling-superviser:
     <<: *airport-service
     container_name: handling-superviser
-    command: ['/app/build/HandlingSuperviser', '8085']
+    command: [ '/app/build/HandlingSuperviser', '8085' ]
     ports:
       - '8085:8085'
     environment:
       HANDLING_PORT: '8085'
       BOARD_HOST: board
       BOARD_PORT: '8084'
+      REFUELER_HOST: refueler
+      REFUELER_PORT: '8086'
+    depends_on:
+      refueler:
+        condition: service_healthy
     healthcheck:
-      test: ['CMD', 'curl', '-fsS', 'http://localhost:8085/health']
+      test: [ 'CMD', 'curl', '-fsS', 'http://localhost:8085/health' ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  refueler:
+    <<: *airport-service
+    container_name: refueler
+    command: [ '/app/build/Refueler', '8086' ]
+    ports:
+      - '8086:8086'
+    environment:
+      GC_HOST: ground-control
+      GC_PORT: '8081'
+      BOARD_HOST: board
+      BOARD_PORT: '8084'
+      RF_PG_HOST: postgres
+      RF_PG_PORT: '5432'
+      RF_PG_DB: airport
+      RF_PG_USER: airport_user
+      RF_PG_PASSWORD: airport_pass
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ground-control:
+        condition: service_healthy
+    healthcheck:
+      test: [ 'CMD', 'curl', '-fsS', 'http://localhost:8086/health' ]
       interval: 5s
       timeout: 3s
       retries: 20

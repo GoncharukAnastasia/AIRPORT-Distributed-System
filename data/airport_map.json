@@ -157,7 +157,7 @@
     },
     {
       "name": "RS-1",
-      "capacity": 1,
+      "capacity": 2,
       "type": "refuelStation"
     },
     {

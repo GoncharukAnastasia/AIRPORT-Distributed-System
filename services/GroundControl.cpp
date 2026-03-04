@@ -1341,6 +1341,198 @@ public:
             app::reply_json(res, 200, {{"ok", true}});
         });
 
+        svr.Get("/v1/takeoff_preparation_needed", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!req.has_param("flightId")) {
+                app::reply_json(res, 400, {{"error", "flightId query param is required"}});
+                return;
+            }
+
+            const std::string flightId = req.get_param_value("flightId");
+
+            auto panelRes = app::http_get_json(
+                panelHost_, panelPort_,
+                "/v1/flights/" + flightId + "?ts=" + std::to_string(app::now_sec())
+            );
+
+            if (!panelRes.ok()) {
+                app::reply_json(res, 200, {
+                    {"flightId", flightId},
+                    {"needed", false},
+                    {"retryAfterSec", 10},
+                    {"reason", "panel_unreachable"}
+                });
+                return;
+            }
+
+            const std::string phase = panelRes.body.value("phase", std::string("grounded"));
+            if (phase != "grounded") {
+                app::reply_json(res, 200, {
+                    {"flightId", flightId},
+                    {"needed", false},
+                    {"retryAfterSec", 10},
+                    {"reason", "not_grounded"},
+                    {"phase", phase}
+                });
+                return;
+            }
+
+            if (panelRes.body.contains("takeoffAllowed") && panelRes.body["takeoffAllowed"].is_boolean()) {
+                if (!panelRes.body["takeoffAllowed"].get<bool>()) {
+                    app::reply_json(res, 200, {
+                        {"flightId", flightId},
+                        {"needed", false},
+                        {"retryAfterSec", 10},
+                        {"reason", "takeoff_time_not_reached"}
+                    });
+                    return;
+                }
+            }
+
+            app::reply_json(res, 200, {
+                {"flightId", flightId},
+                {"needed", true},
+                {"parkingNode", panelRes.body.value("parkingNode", std::string())}
+            });
+        });
+
+        svr.Get("/v1/map/refueler/path", [&](const httplib::Request& req, httplib::Response& res) {
+            if (!req.has_param("vehicleId") || !req.has_param("parkingNode")) {
+                app::reply_json(res, 400, {{"error", "vehicleId and parkingNode required"}});
+                return;
+            }
+
+            const std::string vehicleId = req.get_param_value("vehicleId");
+            const std::string parkingNode = req.get_param_value("parkingNode");
+
+            std::lock_guard<std::mutex> lk(mtx_);
+
+            auto serviceNode = choose_refuel_service_node_unsafe_(parkingNode);
+            if (!serviceNode) {
+                app::reply_json(res, 404, {
+                    {"error", "service_node_not_found"},
+                    {"parkingNode", parkingNode}
+                });
+                return;
+            }
+
+            std::string vehicleNode = "RS-1";
+            auto pIt = vehiclePos_.find(vehicleId);
+            if (pIt != vehiclePos_.end()) {
+                if (pIt->second.kind == VehiclePos::Kind::Node) {
+                    vehicleNode = pIt->second.place;
+                } else {
+                    vehicleNode = pIt->second.lastNode;
+                }
+            }
+
+            auto routeToService = shortest_path_nodes_unsafe(vehicleNode, *serviceNode, "carRoad");
+            auto routeReturn = shortest_path_nodes_unsafe(*serviceNode, "RS-1", "carRoad");
+
+            if (routeToService.empty() || routeReturn.empty()) {
+                app::reply_json(res, 409, {
+                    {"error", "route_not_found"},
+                    {"vehicleNode", vehicleNode},
+                    {"serviceNode", *serviceNode}
+                });
+                return;
+            }
+
+            app::reply_json(res, 200, {
+                {"vehicleId", vehicleId},
+                {"parkingNode", parkingNode},
+                {"serviceNode", *serviceNode},
+                {"routeToService", routeToService},
+                {"routeReturn", routeReturn}
+            });
+        });
+
+        svr.Post("/v1/refuelers/mission/refueled", [&](const httplib::Request& req, httplib::Response& res) {
+            auto bodyOpt = app::parse_json_body(req);
+            if (!bodyOpt) {
+                app::reply_json(res, 400, {{"error", "invalid json"}});
+                return;
+            }
+
+            const auto& body = *bodyOpt;
+            const std::string vehicleId = app::s_or(body, "vehicleId");
+            const std::string flightId = app::s_or(body, "flightId");
+
+            if (vehicleId.empty() || flightId.empty()) {
+                app::reply_json(res, 400, {{"error", "vehicleId and flightId required"}});
+                return;
+            }
+
+            {
+                std::lock_guard<std::mutex> lk(mtx_);
+                push_event_unsafe("refueler.refueled", {
+                    {"vehicleId", vehicleId},
+                    {"flightId", flightId},
+                    {"parkingNode", body.value("parkingNode", std::string())},
+                    {"serviceNode", body.value("serviceNode", std::string())},
+                    {"fuelAdded", body.value("fuelAdded", 0)}
+                });
+            }
+
+            app::reply_json(res, 200, {{"ok", true}});
+        });
+
+        svr.Post("/v1/refuelers/mission/completed", [&](const httplib::Request& req, httplib::Response& res) {
+            auto bodyOpt = app::parse_json_body(req);
+            if (!bodyOpt) {
+                app::reply_json(res, 400, {{"error", "invalid json"}});
+                return;
+            }
+
+            const auto& body = *bodyOpt;
+            const std::string vehicleId = app::s_or(body, "vehicleId");
+            const std::string flightId = app::s_or(body, "flightId");
+
+            if (vehicleId.empty() || flightId.empty()) {
+                app::reply_json(res, 400, {{"error", "vehicleId and flightId required"}});
+                return;
+            }
+
+            {
+                std::lock_guard<std::mutex> lk(mtx_);
+                push_event_unsafe("refueler.mission.completed", {
+                    {"vehicleId", vehicleId},
+                    {"flightId", flightId},
+                    {"parkingNode", body.value("parkingNode", std::string())}
+                });
+            }
+
+            app::reply_json(res, 200, {{"ok", true}});
+        });
+
+        svr.Post("/v1/refuelers/mission/failed", [&](const httplib::Request& req, httplib::Response& res) {
+            auto bodyOpt = app::parse_json_body(req);
+            if (!bodyOpt) {
+                app::reply_json(res, 400, {{"error", "invalid json"}});
+                return;
+            }
+
+            const auto& body = *bodyOpt;
+            const std::string vehicleId = app::s_or(body, "vehicleId");
+            const std::string flightId = app::s_or(body, "flightId");
+
+            if (vehicleId.empty() || flightId.empty()) {
+                app::reply_json(res, 400, {{"error", "vehicleId and flightId required"}});
+                return;
+            }
+
+            {
+                std::lock_guard<std::mutex> lk(mtx_);
+                push_event_unsafe("refueler.mission.failed", {
+                    {"vehicleId", vehicleId},
+                    {"flightId", flightId},
+                    {"parkingNode", body.value("parkingNode", std::string())},
+                    {"reason", body.value("reason", std::string("unknown"))}
+                });
+            }
+
+            app::reply_json(res, 200, {{"ok", true}});
+        });
+
         // Visualizer snapshot API
         svr.Get("/v1/visualizer/snapshot", [&](const httplib::Request&, httplib::Response& res)
         {
@@ -1624,6 +1816,40 @@ private:
         {
             if (occ.count(token) > 0) return node;
         }
+        return std::nullopt;
+    }
+
+    std::vector<std::string> refuel_service_nodes_for_parking_unsafe_(const std::string& parkingNode) const {
+        if (parkingNode.size() == 3 &&
+            parkingNode[0] == 'P' &&
+            parkingNode[1] == '-' &&
+            std::isdigit(static_cast<unsigned char>(parkingNode[2]))) {
+            const char n = parkingNode[2];
+            return {
+                std::string("CP-") + n + "1",
+                std::string("CP-") + n + "2"
+            };
+            }
+        return {};
+    }
+
+    std::optional<std::string> choose_refuel_service_node_unsafe_(const std::string& parkingNode) {
+        const auto candidates = refuel_service_nodes_for_parking_unsafe_(parkingNode);
+
+        for (const auto& node : candidates) {
+            if (nodes_.count(node) && node_has_slot_unsafe(node)) {
+                return node;
+            }
+        }
+
+        // fallback: если сейчас всё занято — возвращаем первый существующий,
+        // а Refueler уже сам будет ждать освобождения через leave-edge logic
+        for (const auto& node : candidates) {
+            if (nodes_.count(node)) {
+                return node;
+            }
+        }
+
         return std::nullopt;
     }
 

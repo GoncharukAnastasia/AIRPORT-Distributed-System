@@ -54,6 +54,9 @@ struct Agent {
     std::atomic<bool> stop{false};
     std::thread th;
 
+    int fuelCapacity = 100;
+    std::atomic<int> fuelLevel{20};
+
     // config
     std::string gcHost = "localhost";
     int gcPort = 8081;
@@ -95,6 +98,10 @@ public:
         defaults_.boardHost = env_or("BOARD_PUBLIC_HOST", "localhost");
         defaults_.boardPort = env_or_int("BOARD_PORT", 8084);
         defaults_.handlingCompleteAfterSec = env_or_int("BOARD_HANDLING_COMPLETE_AFTER_SEC", 5);
+
+        defaults_.fuelCapacity = env_or_int("BOARD_FUEL_CAPACITY", 100);
+        defaults_.airborneInitialFuel = env_or_int("BOARD_AIRBORNE_INITIAL_FUEL", 60);
+        defaults_.groundedInitialFuel = env_or_int("BOARD_GROUNDED_INITIAL_FUEL", 20);
     }
 
     void run(int port) {
@@ -129,6 +136,8 @@ public:
             a->kind = "airborne";
             a->state = "created";
             a->startedAt = app::now_sec();
+            a->fuelCapacity = body.value("fuelCapacity", defaults_.fuelCapacity);
+            a->fuelLevel.store(body.value("fuelLevel", defaults_.airborneInitialFuel));
 
             // По умолчанию — из env; можно переопределить в запросе
             a->gcHost = body.value("gcHost", defaults_.gcHost);
@@ -177,6 +186,8 @@ public:
             a->kind = "grounded";
             a->state = "created";
             a->startedAt = app::now_sec();
+            a->fuelCapacity = body.value("fuelCapacity", defaults_.fuelCapacity);
+            a->fuelLevel.store(body.value("fuelLevel", defaults_.groundedInitialFuel));
 
             a->gcHost = body.value("gcHost", defaults_.gcHost);
             a->gcPort = body.value("gcPort", defaults_.gcPort);
@@ -217,7 +228,9 @@ public:
                     {"handlingPort", a->handlingPort},
                     {"pollSec", a->pollSec},
                     {"startedAt", a->startedAt},
-                    {"lastError", a->lastError}
+                    {"lastError", a->lastError},
+                    {"fuelCapacity", a->fuelCapacity},
+                    {"fuelLevel", a->fuelLevel.load()}
                 });
             }
             app::reply_json(res, 200, {{"planes", arr}});
@@ -271,6 +284,59 @@ public:
             });
         });
 
+        svr.Post("/v1/planes/refuel", [&](const httplib::Request& req, httplib::Response& res) {
+            auto bodyOpt = app::parse_json_body(req);
+            if (!bodyOpt) {
+                app::reply_json(res, 400, {{"error", "invalid json"}});
+                return;
+            }
+
+            const auto& body = *bodyOpt;
+            const std::string flightId = app::s_or(body, "flightId");
+            if (flightId.empty()) {
+                app::reply_json(res, 400, {{"error", "flightId required"}});
+                return;
+            }
+
+            const bool fillToFull = body.value("fillToFull", false);
+            const int amount = body.value("amount", 0);
+
+            std::lock_guard<std::mutex> lk(mtx_);
+            auto it = agents_.find(flightId);
+            if (it == agents_.end()) {
+                app::reply_json(res, 404, {{"error", "agent not found"}});
+                return;
+            }
+
+            if (it->second->kind != "grounded") {
+                app::reply_json(res, 409, {{"error", "only grounded plane can be refueled"}});
+                return;
+            }
+
+            const int before = it->second->fuelLevel.load();
+            const int cap = std::max(1, it->second->fuelCapacity);
+
+            int after = before;
+            if (fillToFull) {
+                after = cap;
+            } else {
+                after = std::min(cap, before + std::max(0, amount));
+            }
+
+            const int fuelAdded = std::max(0, after - before);
+            it->second->fuelLevel.store(after);
+            it->second->state = "grounded.refueled";
+
+            app::reply_json(res, 200, {
+                {"ok", true},
+                {"flightId", flightId},
+                {"before", before},
+                {"after", after},
+                {"fuelCapacity", cap},
+                {"fuelAdded", fuelAdded}
+            });
+        });
+
         std::cout << "[Board] listening on 0.0.0.0:" << port << "\n";
         std::cout << "[Board] defaults: GC=" << defaults_.gcHost << ":" << defaults_.gcPort
                   << ", Handling=" << defaults_.handlingHost << ":" << defaults_.handlingPort << "\n";
@@ -297,6 +363,10 @@ private:
         std::string boardHost;
         int boardPort = 8084;
         int handlingCompleteAfterSec = 5;
+
+        int fuelCapacity = 100;
+        int airborneInitialFuel = 60;
+        int groundedInitialFuel = 20;
     };
 
     bool start_or_replace_agent(std::unique_ptr<Agent> ptr) {
@@ -370,11 +440,42 @@ private:
     }
 
     void run_grounded(Agent& a) {
-        // 1) Просим HandlingSupervisor выполнить обслуживание и прислать callback
+        // 1) Сначала ждём, пока GroundControl скажет: пора начинать подготовку к взлёту
+        a.state = "grounded.poll_takeoff_preparation_needed";
+
+        while (!a.stop.load()) {
+            const std::string needPath = "/v1/takeoff_preparation_needed?flightId=" + url_encode(a.flightId);
+            auto need = app::http_get_json(a.gcHost, a.gcPort, needPath);
+
+            if (!need.ok()) {
+                a.lastError = "takeoff_preparation_needed http error";
+                std::this_thread::sleep_for(std::chrono::seconds(a.pollSec));
+                continue;
+            }
+
+            const bool needed = need.body.value("needed", false);
+            if (!needed) {
+                a.state = std::string("grounded.wait_takeoff_time:") + need.body.value("reason", "");
+                std::this_thread::sleep_for(std::chrono::seconds(a.pollSec));
+                continue;
+            }
+
+            a.state = "grounded.takeoff_preparation_needed";
+            a.lastError.clear();
+            break;
+        }
+
+        if (a.stop.load()) {
+            a.state = "stopped";
+            return;
+        }
+
+        // 2) Теперь запускаем наземное обслуживание (через HandlingSupervisor, который сам дернёт Refueler)
         a.state = "grounded.request_handling";
 
         auto hReq = app::http_post_json(a.handlingHost, a.handlingPort, "/v1/handling/request", {
             {"flightId", a.flightId},
+            {"parkingNode", a.parkingNode},
             {"callbackHost", a.boardCallbackHost},
             {"callbackPort", a.boardCallbackPort},
             {"completeAfterSec", a.handlingCompleteAfterSec},
@@ -382,28 +483,30 @@ private:
             {"services", json::array({"fuel", "catering", "boarding", "baggage"})}
         });
 
-        // Если HandlingSupervisor недоступен — не падаем навсегда, просто ретраим позже
         if (!hReq.ok()) {
             a.lastError = "handling request http error";
         } else {
             a.lastError.clear();
         }
 
-        // 2) Ждем callback от HandlingSupervisor
+        // 3) Ждём callback от HandlingSupervisor
         a.state = "grounded.wait_handling_complete";
+
         while (!a.stop.load() && !a.handlingDone.load()) {
-            // На случай если первый запрос в HandlingSupervisor не дошел — повторяем мягко
             auto ping = app::http_post_json(a.handlingHost, a.handlingPort, "/v1/handling/request", {
                 {"flightId", a.flightId},
+                {"parkingNode", a.parkingNode},
                 {"callbackHost", a.boardCallbackHost},
                 {"callbackPort", a.boardCallbackPort},
                 {"completeAfterSec", a.handlingCompleteAfterSec},
                 {"retryEverySec", 2},
                 {"services", json::array({"fuel", "catering", "boarding", "baggage"})}
             });
+
             if (!ping.ok()) {
                 a.lastError = "handling request retry http error";
             }
+
             std::this_thread::sleep_for(std::chrono::seconds(2));
         }
 
@@ -414,7 +517,7 @@ private:
 
         a.state = "grounded.handling_done";
 
-        // 3) Просим GroundControl подготовить выруливание к RE-1 (через FollowMe)
+        // 4) После обслуживания просим GroundControl начать выруливание (резерв FollowMe)
         while (!a.stop.load() && !a.taxiPrepared.load()) {
             const std::string prepPath = "/v1/flights/" + url_encode(a.flightId) + "/prepare_takeoff";
             auto prep = app::http_post_json(a.gcHost, a.gcPort, prepPath, json::object());
@@ -436,7 +539,7 @@ private:
             return;
         }
 
-        // 4) Поллим разрешение на взлет (GC сам будет учитывать: доехал ли самолет до RE-1, свободна ли RW-1)
+        // 5) Поллим разрешение на взлёт
         a.state = "grounded.poll_takeoff_permission";
         while (!a.stop.load()) {
             const std::string path = "/v1/takeoff_permission?flightId=" + url_encode(a.flightId);
@@ -458,7 +561,6 @@ private:
             a.state = "grounded.takeoff_approved";
             std::this_thread::sleep_for(std::chrono::seconds(a.actionDelaySec));
 
-            // 5) Подтверждаем взлет в GroundControl
             const std::string tookoffPath = "/v1/flights/" + url_encode(a.flightId) + "/tookoff";
             auto tk = app::http_post_json(a.gcHost, a.gcPort, tookoffPath, json::object());
             if (!tk.ok()) {
