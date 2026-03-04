@@ -1,0 +1,9 @@
+cmake-build-debug/
+.idea/
+text_data/
+GPT.txt
+.venv/
+__pycache__/
+*.pyc
+.mypy_cache/
+.DS_Store

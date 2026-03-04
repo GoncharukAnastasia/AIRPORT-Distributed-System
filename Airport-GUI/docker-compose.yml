@@ -1,0 +1,33 @@
+services:
+  airport-visualizer:
+    build:
+      context: .
+      dockerfile: services/airport_visualizer/Dockerfile
+    container_name: airport-visualizer
+    restart: unless-stopped
+    ports:
+      - "8087:8087"
+    environment:
+      VISUALIZER_PORT: "8087"
+      GC_HOST: ${GC_HOST:-localhost}
+      GC_PORT: ${GC_PORT:-8081}
+      INFO_HOST: ${INFO_HOST:-localhost}
+      INFO_PORT: ${INFO_PORT:-8082}
+      HANDLING_HOST: ${HANDLING_HOST:-localhost}
+      HANDLING_PORT: ${HANDLING_PORT:-8085}
+      BUS_HOST: ${BUS_HOST:-localhost}
+      BUS_PORT: ${BUS_PORT:-8086}
+      FOLLOWME_HOST: ${FOLLOWME_HOST:-localhost}
+      FOLLOWME_PORT: ${FOLLOWME_PORT:-8083}
+      BOARD_HOST: ${BOARD_HOST:-localhost}
+      BOARD_PORT: ${BOARD_PORT:-8084}
+      CATERING_HOST: ${CATERING_HOST:-localhost}
+      CATERING_PORT: ${CATERING_PORT:-8089}
+      GC_MAP_PATH: /app/data/airport_map.json
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8087/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - ./data:/app/data:ro
