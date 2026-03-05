@@ -102,6 +102,8 @@ public:
                        int passengerPort,
                        std::string checkinHost,
                        int checkinPort,
+                       std::string reportingHost,
+                       int reportingPort,
                        bool requirePassengerValidation,
                        int maxTicketsPerFlight)
         : infoHost_(std::move(infoHost)),
@@ -110,6 +112,8 @@ public:
           passengerPort_(passengerPort),
           checkinHost_(std::move(checkinHost)),
           checkinPort_(checkinPort),
+          reportingHost_(std::move(reportingHost)),
+          reportingPort_(reportingPort),
           requirePassengerValidation_(requirePassengerValidation),
           maxTicketsPerFlight_(maxTicketsPerFlight) {}
 
@@ -353,6 +357,14 @@ public:
                 {"tickets", json::array({ticket})}
             });
 
+            (void)app::http_post_json(reportingHost_, reportingPort_, "/v1/events", {
+                {"eventId", random_uuid_like()},
+                {"eventType", "ticket_sold"},
+                {"flightId", flightId},
+                {"passengerId", passengerId},
+                {"count", 1}
+            });
+
             app::reply_json(res, 200, ticket);
         });
 
@@ -399,6 +411,14 @@ public:
                 }
             }
 
+            (void)app::http_post_json(reportingHost_, reportingPort_, "/v1/events", {
+                {"eventId", random_uuid_like()},
+                {"eventType", "ticket_refunded"},
+                {"flightId", flightId},
+                {"passengerId", passengerId},
+                {"count", 1}
+            });
+
             app::reply_json(res, 200, {
                 {"ticketId", ticketId},
                 {"status", "returned"}
@@ -421,6 +441,8 @@ private:
     int passengerPort_ = 8004;
     std::string checkinHost_;
     int checkinPort_ = 8005;
+    std::string reportingHost_;
+    int reportingPort_ = 8092;
     bool requirePassengerValidation_ = true;
     int maxTicketsPerFlight_ = 100;
 };
@@ -442,6 +464,9 @@ int main(int argc, char** argv) {
     const std::string checkinHost = env_or("TICKETS_CHECKIN_HOST", "localhost");
     const int checkinPort = env_or_int("TICKETS_CHECKIN_PORT", 8005);
 
+    const std::string reportingHost = env_or("TICKETS_REPORTING_HOST", env_or("REPORTING_HOST", "localhost"));
+    const int reportingPort = env_or_int("TICKETS_REPORTING_PORT", env_or_int("REPORTING_PORT", 8092));
+
     const bool requirePassengerValidation = env_or_int("TICKETS_REQUIRE_PASSENGER_VALIDATION", 1) != 0;
     const int maxTicketsPerFlight = std::max(1, env_or_int("TICKETS_MAX_PER_FLIGHT", 100));
 
@@ -452,6 +477,8 @@ int main(int argc, char** argv) {
         passengerPort,
         checkinHost,
         checkinPort,
+        reportingHost,
+        reportingPort,
         requirePassengerValidation,
         maxTicketsPerFlight
     );

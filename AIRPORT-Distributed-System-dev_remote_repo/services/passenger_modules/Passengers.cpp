@@ -120,14 +120,18 @@ public:
                       int ticketsPort,
                       std::string checkinHost,
                       int checkinPort,
-                      int autogenIntervalSec)
+                      int autogenIntervalSec,
+                      std::string reportingHost,
+                      int reportingPort)
         : infoHost_(std::move(infoHost)),
           infoPort_(infoPort),
           ticketsHost_(std::move(ticketsHost)),
           ticketsPort_(ticketsPort),
           checkinHost_(std::move(checkinHost)),
           checkinPort_(checkinPort),
-          autogenIntervalSec_(autogenIntervalSec) {}
+          autogenIntervalSec_(autogenIntervalSec),
+          reportingHost_(std::move(reportingHost)),
+          reportingPort_(reportingPort) {}
 
     void run(int port) {
         if (autogenIntervalSec_ > 0) {
@@ -216,18 +220,34 @@ public:
             }
 
             int updated = 0;
-            std::lock_guard<std::mutex> lk(mtx_);
-            for (const auto& idj : (*bodyOpt)["passenger_ids"]) {
-                if (!idj.is_string()) continue;
-                const std::string id = idj.get<std::string>();
-                auto it = passengers_.find(id);
-                if (it == passengers_.end()) continue;
-                const std::string state = it->second.value("state", std::string(""));
-                if (state == "CheckedIn" || state == "OnBus") {
-                    it->second["state"] = "Boarded";
-                    it->second["updatedAt"] = to_iso_utc(app::now_sec());
-                    ++updated;
+            std::string flightIdForEvent;
+            {
+                std::lock_guard<std::mutex> lk(mtx_);
+                for (const auto& idj : (*bodyOpt)["passenger_ids"]) {
+                    if (!idj.is_string()) continue;
+                    const std::string id = idj.get<std::string>();
+                    auto it = passengers_.find(id);
+                    if (it == passengers_.end()) continue;
+                    const std::string state = it->second.value("state", std::string(""));
+                    if (state == "CheckedIn" || state == "OnBus") {
+                        it->second["state"] = "Boarded";
+                        it->second["updatedAt"] = to_iso_utc(app::now_sec());
+                        ++updated;
+
+                        if (flightIdForEvent.empty()) {
+                            flightIdForEvent = it->second.value("flightId", std::string(""));
+                        }
+                    }
                 }
+            }
+
+            if (!flightIdForEvent.empty()) {
+                (void)app::http_post_json(reportingHost_, reportingPort_, "/v1/events", {
+                    {"eventId", random_uuid_like()},
+                    {"eventType", "passengers_boarded"},
+                    {"flightId", flightIdForEvent},
+                    {"count", updated}
+                });
             }
 
             app::reply_json(res, 200, {{"status", "success"}, {"updated", updated}});
@@ -658,6 +678,8 @@ private:
     int checkinPort_ = 8005;
 
     int autogenIntervalSec_ = 0;
+    std::string reportingHost_;
+    int reportingPort_ = 8092;
     std::atomic<bool> stopAutogen_{false};
     std::thread autogenThread_;
 };
@@ -677,7 +699,9 @@ int main(int argc, char** argv) {
         env_or_int("PASSENGER_TICKETS_PORT", 8003),
         env_or("PASSENGER_CHECKIN_HOST", "localhost"),
         env_or_int("PASSENGER_CHECKIN_PORT", 8005),
-        env_or_int("PASSENGER_AUTOGENERATE_INTERVAL_SEC", 0)
+        env_or_int("PASSENGER_AUTOGENERATE_INTERVAL_SEC", 0),
+        env_or("PASSENGER_REPORTING_HOST", env_or("REPORTING_HOST", "localhost")),
+        env_or_int("PASSENGER_REPORTING_PORT", env_or_int("REPORTING_PORT", 8092))
     );
 
     svc.run(port);

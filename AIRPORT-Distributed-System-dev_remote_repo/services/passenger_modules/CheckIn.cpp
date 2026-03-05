@@ -116,7 +116,9 @@ public:
                    std::string cateringHost,
                    int cateringPort,
                    std::string baggageHost,
-                   int baggagePort)
+                   int baggagePort,
+                   std::string reportingHost,
+                   int reportingPort)
         : infoHost_(std::move(infoHost)),
           infoPort_(infoPort),
           ticketsHost_(std::move(ticketsHost)),
@@ -126,7 +128,9 @@ public:
           cateringHost_(std::move(cateringHost)),
           cateringPort_(cateringPort),
           baggageHost_(std::move(baggageHost)),
-          baggagePort_(baggagePort) {}
+          baggagePort_(baggagePort),
+          reportingHost_(std::move(reportingHost)),
+          reportingPort_(reportingPort) {}
 
     void run(int port) {
         httplib::Server svr;
@@ -311,6 +315,13 @@ public:
                     {"checkInTime", rec["checkedInAt"]}
                 }
             );
+
+            (void)app::http_post_json(reportingHost_, reportingPort_, "/v1/events", {
+                {"eventId", random_uuid_like()},
+                {"eventType", "passenger_checked_in"},
+                {"flightId", flightId},
+                {"passengerId", passengerId}
+            });
 
             app::reply_json(res, 201, {
                 {"checkInId", rec["checkInId"]},
@@ -551,6 +562,8 @@ private:
     int cateringPort_ = 8089;
     std::string baggageHost_;
     int baggagePort_ = 8091;
+    std::string reportingHost_;
+    int reportingPort_ = 8092;
 };
 
 } // namespace
@@ -571,7 +584,9 @@ int main(int argc, char** argv) {
         env_or("CHECKIN_CATERING_HOST", "localhost"),
         env_or_int("CHECKIN_CATERING_PORT", 8089),
         env_or("CHECKIN_BAGGAGE_HOST", "localhost"),
-        env_or_int("CHECKIN_BAGGAGE_PORT", 8091)
+        env_or_int("CHECKIN_BAGGAGE_PORT", 8091),
+        env_or("CHECKIN_REPORTING_HOST", env_or("REPORTING_HOST", "localhost")),
+        env_or_int("CHECKIN_REPORTING_PORT", env_or_int("REPORTING_PORT", 8092))
     );
 
     svc.run(port);
