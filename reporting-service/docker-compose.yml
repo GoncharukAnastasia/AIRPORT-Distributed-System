@@ -1,0 +1,24 @@
+services:
+  reporting:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    container_name: airport_report
+    ports:
+      - '8092:8092'
+    environment:
+      DB_HOST: 192.168.1.130 # Insert host of postgres-holder (me not gpt)
+      DB_PORT: '5432'
+      DB_NAME: airport
+      DB_USER: airport_user
+      DB_PASS: airport_pass
+
+    # depends_on:
+    #   postgres:
+    #     condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:8092/health']
+      interval: 5s
+      timeout: 3s
+      retries: 20
